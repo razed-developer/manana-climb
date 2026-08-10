@@ -65,8 +65,10 @@ async function getTides() {
   const station = unwrap(stationPayload)[0]
   if (!station?.id) throw new Error('Ladysmith tide station was not found')
 
-  const from = new Date()
-  from.setHours(from.getHours() - 14)
+  const now = new Date()
+  const localMinutes = minuteOfDay(now)
+  const from = new Date(now.getTime() - localMinutes * 60 * 1000)
+  from.setSeconds(0, 0)
   const to = new Date(from)
   to.setDate(to.getDate() + 15)
   const params = new URLSearchParams({
@@ -91,7 +93,7 @@ function interpolateHeight(points, now) {
   return prev.height + (next.height - prev.height) * eased
 }
 
-function AccessibilityTimeline({ points, weather, now }) {
+function AccessibilityTimeline({ points, now }) {
   const timeline = useMemo(() => {
     if (!points.length) return []
     const start = new Date(now.getTime() - 12 * 60 * 60 * 1000)
@@ -99,9 +101,9 @@ function AccessibilityTimeline({ points, weather, now }) {
     return Array.from({ length: 72 }, (_, index) => {
       const date = new Date(start.getTime() + index * 30 * 60 * 1000)
       const height = interpolateHeight(points, date)
-      return { date, height, band: bandFor(height ?? 0), weather: weatherAt(weather, date) }
+      return { date, height, band: bandFor(height ?? 0) }
     })
-  }, [points, weather, now])
+  }, [points, now])
 
   const labels = timeline.filter((_, index) => index % 12 === 0 || index === timeline.length - 1)
   const start = timeline[0]?.date
@@ -117,7 +119,7 @@ function AccessibilityTimeline({ points, weather, now }) {
       <div className="timeline-wrap">
         <div className="timeline-now" style={{ left: `${nowPosition}%` }} aria-hidden="true"><span>Now</span></div>
         <div className="timeline-bands" role="img" aria-label="Ramp accessibility by half hour for the previous 12 hours and next 24 hours">
-          {timeline.map(({ date, height, band, weather: conditions }) => <i key={date.toISOString()} className={`${band.key} ${conditions.wet ? 'wet' : 'dry'}`} title={`${dayLabel(date)}, ${timeLabel(date)}: ${height?.toFixed(1) ?? '—'} m — ${band.short} · ${conditions.wet ? 'Rain palette' : 'Dry palette'}`} />)}
+          {timeline.map(({ date, height, band }) => <i key={date.toISOString()} className={band.key} title={`${dayLabel(date)}, ${timeLabel(date)}: ${height?.toFixed(1) ?? '—'} m — ${band.short}`} />)}
         </div>
         <div className="timeline-labels">{labels.map(({ date }) => <span key={date.toISOString()} style={{ left: `${((date - start) / (end - start)) * 100}%` }}>{timeLabel(date)}</span>)}</div>
       </div>
@@ -126,7 +128,7 @@ function AccessibilityTimeline({ points, weather, now }) {
   )
 }
 
-function TideGraph({ day, points, weather, now }) {
+function TideGraph({ day, points, now }) {
   const chart = useMemo(() => {
     if (!day.length || !points.length) return null
     const key = localDayKey(day[0].date)
@@ -148,9 +150,8 @@ function TideGraph({ day, points, weather, now }) {
       isHigh: point.height > (day[index - 1]?.height ?? day[index + 1]?.height ?? point.height)
     }))
     const nowMinutes = localDayKey(now) === key ? minuteOfDay(now) : null
-    const wet = samples.filter((sample) => weatherAt(weather, sample.date).wet).length > samples.length / 2
-    return { path, area, events, x, y, maxHeight, nowMinutes, wet }
-  }, [day, points, weather, now])
+    return { path, area, events, x, y, maxHeight, nowMinutes }
+  }, [day, points, now])
 
   if (!chart) return <p className="empty">No tide events returned for this day.</p>
 
@@ -158,7 +159,7 @@ function TideGraph({ day, points, weather, now }) {
   const yCare = chart.y(1.8)
 
   return (
-    <div className={`tide-graph-wrap ${chart.wet ? 'weather-wet' : 'weather-dry'}`}>
+    <div className="tide-graph-wrap">
       <svg className="tide-graph" viewBox="0 0 1000 360" role="img" aria-label="Tide height curve with marked high and low tides across the selected day">
         <defs>
           <linearGradient id="tide-water" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#168e88" stopOpacity=".34" /><stop offset="1" stopColor="#168e88" stopOpacity=".04" /></linearGradient>
@@ -218,14 +219,19 @@ function App() {
       if (!map.has(key)) map.set(key, [])
       map.get(key).push(point)
     })
-    return [...map.values()].filter((day) => day.some((p) => p.date >= now)).slice(0, 14)
+    const todayKey = localDayKey(now)
+    return [...map.entries()]
+      .filter(([key]) => key >= todayKey)
+      .slice(0, 14)
+      .map(([, day]) => day)
   }, [points, now])
 
   const selected = days[selectedDay] ?? []
   const selectedDate = selected[0]?.date
+  const currentWeather = weatherAt(weather, now)
 
   return (
-    <main>
+    <main className={currentWeather.wet ? 'weather-wet' : 'weather-dry'}>
       <header className="nav-shell">
         <a className="brand" href="#top"><span><Anchor size={23} strokeWidth={2.4} /></span><b>Manana Climb</b></a>
         <a className="about-link" href="#how">How it works</a>
@@ -250,7 +256,7 @@ function App() {
               </div>
               {nextGood && currentBand.key !== 'fair' && <div className="next-good"><span>Next fair passage</span><b>{dayLabel(nextGood.date)} at {timeLabel(nextGood.date)}</b><ArrowRight size={18} /></div>}
             </div>
-            {!loading && <AccessibilityTimeline points={points} weather={weather} now={now} />}
+            {!loading && <AccessibilityTimeline points={points} now={now} />}
           </div>
         )}
       </section>
@@ -273,7 +279,7 @@ function App() {
 
         <div className="tide-card">
           <div className="tide-title"><div><span>{selectedDate ? dayLabel(selectedDate) : 'Loading forecast…'}</span>{selectedDay >= 7 && <small>Long-range prediction</small>}</div><span className="legend"><i className="fair" /> Good <i className="care" /> Steep <i className="steep" /> Very steep</span></div>
-          <TideGraph day={selected} points={points} weather={weather} now={now} />
+          <TideGraph day={selected} points={points} now={now} />
         </div>
       </section>
 
