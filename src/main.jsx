@@ -17,6 +17,12 @@ const dtf = (options) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ, ...opt
 const localDayKey = (date) => dtf({ year: 'numeric', month: '2-digit', day: '2-digit' }).format(date)
 const dayLabel = (date) => dtf({ weekday: 'long', month: 'short', day: 'numeric' }).format(date)
 const timeLabel = (date) => dtf({ hour: 'numeric', minute: '2-digit' }).format(date)
+const minuteOfDay = (date) => {
+  const parts = dtf({ hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(date)
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? 0) % 24
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? 0)
+  return hour * 60 + minute
+}
 
 async function apiGet(path) {
   let lastError
@@ -94,6 +100,61 @@ function AccessibilityTimeline({ points, now }) {
         <div className="timeline-labels">{labels.map(({ date }) => <span key={date.toISOString()}>{timeLabel(date)}</span>)}</div>
       </div>
       <div className="timeline-legend"><span><i className="fair" /> Most accessible</span><span><i className="care" /> Steep</span><span><i className="steep" /> Very steep</span></div>
+    </div>
+  )
+}
+
+function TideGraph({ day, points, now }) {
+  const chart = useMemo(() => {
+    if (!day.length || !points.length) return null
+    const key = localDayKey(day[0].date)
+    const anchor = day[0].date
+    const start = new Date(anchor.getTime() - minuteOfDay(anchor) * 60 * 1000)
+    const samples = Array.from({ length: 97 }, (_, index) => {
+      const minutes = index * 15
+      const date = new Date(start.getTime() + minutes * 60 * 1000)
+      return { minutes, date, height: interpolateHeight(points, date) ?? 0 }
+    })
+    const maxHeight = Math.max(4, ...samples.map((sample) => sample.height))
+    const x = (minutes) => 54 + (minutes / 1440) * 892
+    const y = (height) => 282 - (height / maxHeight) * 232
+    const path = samples.map((sample, index) => `${index ? 'L' : 'M'} ${x(sample.minutes).toFixed(1)} ${y(sample.height).toFixed(1)}`).join(' ')
+    const area = `${path} L 946 282 L 54 282 Z`
+    const events = day.map((point, index) => ({
+      ...point,
+      minutes: minuteOfDay(point.date),
+      isHigh: point.height > (day[index - 1]?.height ?? day[index + 1]?.height ?? point.height)
+    }))
+    const nowMinutes = localDayKey(now) === key ? minuteOfDay(now) : null
+    return { path, area, events, x, y, maxHeight, nowMinutes }
+  }, [day, points, now])
+
+  if (!chart) return <p className="empty">No tide events returned for this day.</p>
+
+  const yThree = chart.y(3)
+  const yCare = chart.y(1.8)
+
+  return (
+    <div className="tide-graph-wrap">
+      <svg className="tide-graph" viewBox="0 0 1000 360" role="img" aria-label="Tide height curve with marked high and low tides across the selected day">
+        <defs>
+          <linearGradient id="tide-water" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#168e88" stopOpacity=".34" /><stop offset="1" stopColor="#168e88" stopOpacity=".04" /></linearGradient>
+          <filter id="marker-shadow"><feDropShadow dx="0" dy="3" stdDeviation="3" floodOpacity=".18" /></filter>
+        </defs>
+        <rect x="54" y="50" width="892" height={Math.max(0, yThree - 50)} className="graph-zone fair" />
+        <rect x="54" y={yThree} width="892" height={Math.max(0, yCare - yThree)} className="graph-zone care" />
+        <rect x="54" y={yCare} width="892" height={282 - yCare} className="graph-zone steep" />
+        {[0, 1.8, 3].map((height) => <g key={height}><line x1="54" x2="946" y1={chart.y(height)} y2={chart.y(height)} className="graph-grid" /><text x="44" y={chart.y(height) + 4} textAnchor="end" className="graph-y-label">{height}m</text></g>)}
+        {[0, 240, 480, 720, 960, 1200, 1440].map((minutes) => <g key={minutes}><line x1={chart.x(minutes)} x2={chart.x(minutes)} y1="50" y2="282" className="graph-grid vertical" /><text x={chart.x(minutes)} y="315" textAnchor="middle" className="graph-time">{minutes === 1440 ? '12 AM' : timeLabel(new Date(day[0].date.getTime() + (minutes - minuteOfDay(day[0].date)) * 60000))}</text></g>)}
+        <path d={chart.area} fill="url(#tide-water)" />
+        <path d={chart.path} className="tide-curve" />
+        {chart.nowMinutes !== null && <g><line x1={chart.x(chart.nowMinutes)} x2={chart.x(chart.nowMinutes)} y1="43" y2="288" className="graph-now" /><text x={chart.x(chart.nowMinutes)} y="36" textAnchor="middle" className="graph-now-label">NOW</text></g>}
+        {chart.events.map((event) => {
+          const cx = chart.x(event.minutes); const cy = chart.y(event.height)
+          return <g key={event.date.toISOString()} className="tide-marker" filter="url(#marker-shadow)"><line x1={cx} x2={cx} y1={cy} y2={event.isHigh ? cy - 27 : cy + 27} /><circle cx={cx} cy={cy} r="7" /><rect x={cx - 43} y={event.isHigh ? cy - 67 : cy + 27} width="86" height="38" rx="9" /><text x={cx} y={event.isHigh ? cy - 51 : cy + 43} textAnchor="middle">{event.isHigh ? 'HIGH' : 'LOW'} · {event.height.toFixed(1)}m</text><text x={cx} y={event.isHigh ? cy - 39 : cy + 55} textAnchor="middle" className="marker-time">{timeLabel(event.date)}</text></g>
+        })}
+      </svg>
+      <div className="graph-key"><span><i className="fair" /> Good angle</span><span><i className="care" /> Getting steep</span><span><i className="steep" /> Very steep</span></div>
     </div>
   )
 }
@@ -183,14 +244,7 @@ function App() {
 
         <div className="tide-card">
           <div className="tide-title"><div><span>{selectedDate ? dayLabel(selectedDate) : 'Loading forecast…'}</span>{selectedDay >= 7 && <small>Long-range prediction</small>}</div><span className="legend"><i className="fair" /> Good <i className="care" /> Steep <i className="steep" /> Very steep</span></div>
-          <div className="tide-events">
-            {selected.map((point, index) => {
-              const isHigh = index === 0 ? point.height > (selected[1]?.height ?? point.height) : point.height > selected[index - 1].height
-              const band = bandFor(point.height)
-              return <article key={point.date.toISOString()}><div className={`event-icon ${band.key}`}>{isHigh ? '↟' : '↡'}</div><div><span>{isHigh ? 'High tide' : 'Low tide'}</span><strong>{timeLabel(point.date)}</strong></div><b>{point.height.toFixed(1)} <small>m</small></b><em className={band.key}>{band.short}</em></article>
-            })}
-            {!selected.length && !loading && <p className="empty">No tide events returned for this day.</p>}
-          </div>
+          <TideGraph day={selected} points={points} now={now} />
         </div>
       </section>
 
