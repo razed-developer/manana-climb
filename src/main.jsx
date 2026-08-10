@@ -41,7 +41,7 @@ async function getTides() {
   if (!station?.id) throw new Error('Ladysmith tide station was not found')
 
   const from = new Date()
-  from.setHours(from.getHours() - 8)
+  from.setHours(from.getHours() - 14)
   const to = new Date(from)
   to.setDate(to.getDate() + 15)
   const params = new URLSearchParams({
@@ -66,15 +66,34 @@ function interpolateHeight(points, now) {
   return prev.height + (next.height - prev.height) * eased
 }
 
-function RampIllustration({ band }) {
+function AccessibilityTimeline({ points, now }) {
+  const timeline = useMemo(() => {
+    if (!points.length) return []
+    const start = new Date(now.getTime() - 12 * 60 * 60 * 1000)
+    start.setMinutes(0, 0, 0)
+    return Array.from({ length: 72 }, (_, index) => {
+      const date = new Date(start.getTime() + index * 30 * 60 * 1000)
+      const height = interpolateHeight(points, date)
+      return { date, height, band: bandFor(height ?? 0) }
+    })
+  }, [points, now])
+
+  const labels = timeline.filter((_, index) => index % 12 === 0)
+
   return (
-    <div className={`ramp-scene ${band.key}`} aria-label={`Ramp illustration: ${band.short}`}>
-      <div className="moon" />
-      <div className="cloud cloud-one" /><div className="cloud cloud-two" />
-      <div className="dock"><span /><span /><span /><span /></div>
-      <div className="ramp"><i /><i /><i /><i /><i /><i /></div>
-      <div className="water"><div /><div /><div /></div>
-      <div className="boat"><span className="mast" /><span className="sail" /><span className="hull">MANANA</span></div>
+    <div className="accessibility-timeline">
+      <div className="timeline-heading">
+        <div><span className="status-kicker">36-hour gangway outlook</span><h3>When is the ramp most accessible?</h3></div>
+        <span className="timeline-range">Past 12 hours <ArrowRight size={14} /> Next 24 hours</span>
+      </div>
+      <div className="timeline-wrap">
+        <div className="timeline-now" aria-hidden="true"><span>Now</span></div>
+        <div className="timeline-bands" role="img" aria-label="Ramp accessibility by half hour for the previous 12 hours and next 24 hours">
+          {timeline.map(({ date, height, band }) => <i key={date.toISOString()} className={band.key} title={`${dayLabel(date)}, ${timeLabel(date)}: ${height?.toFixed(1) ?? '—'} m — ${band.short}`} />)}
+        </div>
+        <div className="timeline-labels">{labels.map(({ date }) => <span key={date.toISOString()}>{timeLabel(date)}</span>)}</div>
+      </div>
+      <div className="timeline-legend"><span><i className="fair" /> Most accessible</span><span><i className="care" /> Steep</span><span><i className="steep" /> Very steep</span></div>
     </div>
   )
 }
@@ -141,7 +160,7 @@ function App() {
               </div>
               {nextGood && currentBand.key !== 'fair' && <div className="next-good"><span>Next fair passage</span><b>{dayLabel(nextGood.date)} at {timeLabel(nextGood.date)}</b><ArrowRight size={18} /></div>}
             </div>
-            <RampIllustration band={currentBand} />
+            {!loading && <AccessibilityTimeline points={points} now={now} />}
           </div>
         )}
       </section>
