@@ -1,6 +1,6 @@
 import { StrictMode, useEffect, useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Anchor, ArrowRight, CalendarDays, ChevronLeft, ChevronRight, Clock3, Info, RefreshCw, TriangleAlert } from 'lucide-react'
+import { Anchor, ArrowRight, CalendarDays, ChevronLeft, ChevronRight, Clock3, RefreshCw, TriangleAlert } from 'lucide-react'
 import './styles.css'
 
 const STATION_CODE = '07460'
