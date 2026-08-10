@@ -136,7 +136,7 @@ function App() {
               <h2>{loading ? 'Reading the tides…' : currentBand.label}</h2>
               <p>{loading ? 'A message is coming in from Ladysmith Harbour.' : currentBand.note}</p>
               <div className="status-meta">
-                <span><b>{currentHeight?.toFixed(1) ?? '—'} m</b> tide height</span>
+                <span><b>{currentHeight?.toFixed(1) ?? '—'} m</b> estimated tide height</span>
                 {nextTurn && <span><Clock3 size={15} /> {nextTurn.height > (currentHeight ?? 0) ? 'High' : 'Low'} {timeLabel(nextTurn.date)} · {nextTurn.height.toFixed(1)} m</span>}
               </div>
               {nextGood && currentBand.key !== 'fair' && <div className="next-good"><span>Next fair passage</span><b>{dayLabel(nextGood.date)} at {timeLabel(nextGood.date)}</b><ArrowRight size={18} /></div>}
@@ -179,7 +179,7 @@ function App() {
         <div><span className="eyebrow"><span /> Read the colours</span><h2>How steep is steep?</h2><p>The water level changes the angle of the marina’s long ramp. More water means a gentler walk.</p></div>
         <div className="bands">
           <article className="fair"><b>3.0 m +</b><h3>Fair winds</h3><p>Favourable angle</p></article>
-          <article className="care"><b>1.8–3.0 m</b><h3>Mind yer step</h3><p>Increasingly steep</p></article>
+          <article className="care"><b>Over 1.8–under 3.0 m</b><h3>Mind yer step</h3><p>Increasingly steep</p></article>
           <article className="steep"><b>1.8 m or less</b><h3>Abandon climb</h3><p>Steepest angle</p></article>
         </div>
       </section>
